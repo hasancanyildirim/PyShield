@@ -1,1 +1,0 @@
-# QA Safe MVP - no external packages required yet

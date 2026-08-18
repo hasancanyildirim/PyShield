@@ -1,1 +1,4 @@
-# QA Safe MVP - no external packages required yet
+# QA Safe MVP
+ollama
+chromadb
+pyyaml

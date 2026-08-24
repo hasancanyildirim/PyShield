@@ -1,67 +1,131 @@
-"""QA Safe - first MVP demo."""
-
-from red_agent.red_agent import RedAgent
+from red_agent.red_agent import baseline_tests
 from target_ai.target_bot import TargetAI
-from evaluator.evaluator import Evaluator
+from evaluator.evaluator import evaluate_target_response
+
 
 def run_tests():
-    print("=" * 60)
-    print("QA SAFE - AI SECURITY TESTING MVP")
-    print("=" * 60)
+    print("=" * 70)
+    print("QA SAFE - TEST FOUNDATION MVP")
+    print("=" * 70)
 
-    red_agent = RedAgent()
     target_ai = TargetAI()
-    evaluator = Evaluator()
 
-    attacks = red_agent.get_all_attacks()
-    report_data = []
+    final_results = []
 
-    # SUNUM İÇİN DETAYLI VE İKONLU ÇIKTI
-    for index, attack in enumerate(attacks, start=1):
-        print(f"\n{'=' * 60}")
-        print(f"ATTACK {index}/{len(attacks)}")
-        print("=" * 60)
+    for test_record in baseline_tests:
+        print("\n" + "=" * 70)
+        print(
+            f"[{test_record['test_id']}] "
+            f"{test_record['category']} "
+            f"- {test_record['attack_type']}"
+        )
+        print("=" * 70)
 
-        print("\n[🔴 RED AGENT PROMPT]")
-        print(attack)
+        print(f"Severity: {test_record['severity']}")
 
-        response = target_ai.generate_response(attack)
-        
-        print("\n[🟢 TARGET AI RESPONSE]")
-        print(response)
+        print("\n[EXPECTED BEHAVIOR]")
+        print(test_record["expected_behavior"])
 
-        evaluation = evaluator.evaluate(attack, response)
-        score = evaluation.get('score', 0)
-        reasoning = evaluation.get('reasoning', 'No reasoning provided')
-        
-        print("\n[⚖️ EVALUATOR VERDICT]")
-        print(f"Score: {score}")
-        print(f"Reasoning: {reasoning}")
+        print("\n[RED AGENT PROMPT]")
+        print(test_record["prompt"])
 
-        # Final raporu için verileri biriktir
-        report_data.append({
-            "attack_id": index,
-            "score": score,
-            "reasoning": reasoning
-        })
+        # -------------------------------------------------
+        # TARGET AI
+        # -------------------------------------------------
 
-    # YÖNETİCİLER İÇİN FİNAL RAPORU
-    print("\n\n" + "=" * 60)
-    print("🏆 AI-QA SHIELD FINAL SECURITY REPORT 🏆")
-    print("=" * 60)
-    
-    total_score = 0
-    for data in report_data:
-        try:
-            total_score += int(data['score'])
-        except (ValueError, TypeError):
-            pass
+        target_data = target_ai.generate_response(
+            test_record["prompt"],
+            test_mode=True
+        )
 
-    average_score = total_score / len(attacks) if attacks else 0
-    
-    print(f"🎯 OVERALL SYSTEM SECURITY SCORE: {average_score:.2f} / 100")
-    print("=" * 60)
-    print("=== TEST COMPLETED ===")
+        target_response = target_data.get(
+            "target_response",
+            ""
+        )
+
+        retrieved_context = target_data.get(
+            "retrieved_context",
+            []
+        )
+
+        visibility = target_data.get(
+            "visibility",
+            []
+        )
+
+        print("\n[TARGET AI RESPONSE]")
+        print(target_response)
+
+        print("\n[RETRIEVAL INFO]")
+        print(f"Retrieved Chunks: {len(retrieved_context)}")
+        print(f"Visibility: {visibility}")
+
+        # -------------------------------------------------
+        # EVALUATOR
+        # -------------------------------------------------
+
+        evaluation_result = evaluate_target_response(
+            test_record=test_record,
+            target_response=target_response,
+            retrieved_context=retrieved_context,
+            visibility=visibility
+        )
+
+        print("\n[EVALUATOR RESULT]")
+        print(
+            f"Result: "
+            f"{evaluation_result.get('result', 'ERROR')}"
+        )
+        print(
+            f"Reason: "
+            f"{evaluation_result.get('reason', 'No reason')}"
+        )
+
+        final_results.append(evaluation_result)
+
+    # -----------------------------------------------------
+    # FINAL REPORT
+    # -----------------------------------------------------
+
+    print("\n\n" + "=" * 70)
+    print("AI-QA SHIELD - FINAL TEST FOUNDATION REPORT")
+    print("=" * 70)
+
+    pass_count = sum(
+        result.get("result") == "PASS"
+        for result in final_results
+    )
+
+    fail_count = sum(
+        result.get("result") == "FAIL"
+        for result in final_results
+    )
+
+    error_count = sum(
+        result.get("result") == "ERROR"
+        for result in final_results
+    )
+
+    for result in final_results:
+        print(
+            f"{result.get('test_id')} | "
+            f"{result.get('category')} | "
+            f"{result.get('severity')} | "
+            f"{result.get('result')}"
+        )
+
+    print("-" * 70)
+
+    print(f"PASS:  {pass_count}")
+    print(f"FAIL:  {fail_count}")
+    print(f"ERROR: {error_count}")
+
+    print(
+        f"TOTAL: {len(final_results)}"
+    )
+
+    print("=" * 70)
+
 
 if __name__ == "__main__":
     run_tests()

@@ -30,14 +30,14 @@ def get_or_create_collection():
     return _collection
 
 
-def ask_target_bot(message: str) -> str:
+def ask_target_bot(message: str, test_mode: bool = False) -> str | dict:
     """
     RAG-based customer support assistant:
     1. Ensures knowledge base is indexed.
     2. Retrieves top 3 PUBLIC documentation chunks.
     3. Builds augmented context prompt.
     4. Calls gemma3:1b to generate a grounded response.
-    5. Returns only the final response text.
+    5. Returns only the final response text (or a dictionary if test_mode=True).
     """
     collection = get_or_create_collection()
 
@@ -74,7 +74,19 @@ Instructions: Based ONLY on the Documentation Context above, answer the customer
             {"role": "user", "content": prompt_content},
         ],
     )
-    return response["message"]["content"]
+    final_response = response["message"]["content"]
+
+    if test_mode:
+        return {
+            "target_response": final_response,
+            "retrieved_context": retrieved_chunks,
+            "visibility": [
+                chunk.get("metadata", {}).get("visibility")
+                for chunk in retrieved_chunks
+            ],
+        }
+
+    return final_response
 
 
 # Backward-compatibility alias functions for shared repo orchestration
@@ -93,18 +105,26 @@ class TargetAI:
     def __init__(self, model_name: str = "NovaBot (gemma3:1b)"):
         self.model_name = model_name
 
-    def generate_response(self, prompt: str) -> str:
-        return ask_target_bot(prompt)
+    def generate_response(self, prompt: str, test_mode: bool = False) -> str | dict:
+        """
+        Generates a Target AI response.
 
-    def get_response(self, prompt: str) -> str:
-        return ask_target_bot(prompt)
+        If test_mode=False:
+            returns only the final response string.
 
-    def __call__(self, prompt: str) -> str:
-        return ask_target_bot(prompt)
+        If test_mode=True:
+            returns structured test data containing:
+            - target_response
+            - retrieved_context
+            - visibility
+        """
+        return ask_target_bot(prompt, test_mode=test_mode)
 
+    def get_response(self, prompt: str, test_mode: bool = False) -> str | dict:
+        """
+        Backward-compatible response method with optional structured test output.
+        """
+        return ask_target_bot(prompt, test_mode=test_mode)
 
-if __name__ == "__main__":
-    print("--- NovaBot Target AI Test Initiated ---")
-    test_query = "What is the default SSH port for NovaCloud VMs?"
-    print(f"Query: {test_query}")
-    print(f"Response: {ask_target_bot(test_query)}")
+    def __call__(self, prompt: str, test_mode: bool = False) -> str | dict:
+        return ask_target_bot(prompt, test_mode=test_mode)

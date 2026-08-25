@@ -1,0 +1,16 @@
+https://raw.githubusercontent.com/verazuo/jailbreak_llms/refs/heads/main/data/prompts/jailbreak_prompts_2023_05_07.csv
+https://raw.githubusercontent.com/verazuo/jailbreak_llms/refs/heads/main/data/prompts/jailbreak_prompts_2023_12_25.csv
+https://raw.githubusercontent.com/verazuo/jailbreak_llms/refs/heads/main/data/prompts/regular_prompts_2023_05_07.csv
+https://raw.githubusercontent.com/verazuo/jailbreak_llms/refs/heads/main/data/prompts/regular_prompts_2023_12_25.csv
+https://raw.githubusercontent.com/TrustAIRLab/JailbreakLLMs/refs/heads/main/data/jailbreak_prompts.csv
+https://raw.githubusercontent.com/TrustAIRLab/JailbreakLLMs/refs/heads/main/data/questions.csv
+https://raw.githubusercontent.com/cysecbench/dataset/refs/heads/main/Dataset/Category%20sets/cysecbench-cloud-attacks.csv
+https://raw.githubusercontent.com/cysecbench/dataset/refs/heads/main/Dataset/Category%20sets/cysecbench-control-system-attacks.csv
+https://raw.githubusercontent.com/cysecbench/dataset/refs/heads/main/Dataset/Category%20sets/cysecbench-cryptographic-attacks.csv
+https://raw.githubusercontent.com/cysecbench/dataset/refs/heads/main/Dataset/Category%20sets/cysecbench-evasion-techniques.csv
+https://raw.githubusercontent.com/cysecbench/dataset/refs/heads/main/Dataset/Category%20sets/cysecbench-hardware-attacks.csv
+https://raw.githubusercontent.com/cysecbench/dataset/refs/heads/main/Dataset/Category%20sets/cysecbench-intrusion-techniques.csv
+https://raw.githubusercontent.com/cysecbench/dataset/refs/heads/main/Dataset/Category%20sets/cysecbench-iot-attacks.csv
+https://raw.githubusercontent.com/cysecbench/dataset/refs/heads/main/Dataset/Category%20sets/cysecbench-malware-attacks.csv
+https://raw.githubusercontent.com/cysecbench/dataset/refs/heads/main/Dataset/Category%20sets/cysecbench-network-attacks.csv
+https://raw.githubusercontent.com/cysecbench/dataset/refs/heads/main/Dataset/Category%20sets/cysecbench-web-application-attacks.csv

@@ -105,18 +105,26 @@ class TargetAI:
     def __init__(self, model_name: str = "NovaBot (gemma3:1b)"):
         self.model_name = model_name
 
-    def generate_response(self, prompt: str) -> str:
-        return ask_target_bot(prompt)
+    def generate_response(self, prompt: str, test_mode: bool = False) -> str | dict:
+        """
+        Generates a Target AI response.
 
-    def get_response(self, prompt: str) -> str:
-        return ask_target_bot(prompt)
+        If test_mode=False:
+            returns only the final response string.
 
-    def __call__(self, prompt: str) -> str:
-        return ask_target_bot(prompt)
+        If test_mode=True:
+            returns structured test data containing:
+            - target_response
+            - retrieved_context
+            - visibility
+        """
+        return ask_target_bot(prompt, test_mode=test_mode)
 
+    def get_response(self, prompt: str, test_mode: bool = False) -> str | dict:
+        """
+        Backward-compatible response method with optional structured test output.
+        """
+        return ask_target_bot(prompt, test_mode=test_mode)
 
-if __name__ == "__main__":
-    print("--- NovaBot Target AI Test Initiated ---")
-    test_query = "What is the default SSH port for NovaCloud VMs?"
-    print(f"Query: {test_query}")
-    print(f"Response: {ask_target_bot(test_query)}")
+    def __call__(self, prompt: str, test_mode: bool = False) -> str | dict:
+        return ask_target_bot(prompt, test_mode=test_mode)

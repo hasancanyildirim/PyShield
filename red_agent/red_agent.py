@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import os
 import json
 import random
@@ -84,3 +85,4 @@ if __name__ == "__main__":
     attack_2 = agent.generate_attack(category="Sensitive Information Leakage", attack_type="Data Exfiltration", difficulty="EASY")
     print("\n[TEST 2 - EASY]")
     print(json.dumps(attack_2, indent=4, ensure_ascii=False))
+    

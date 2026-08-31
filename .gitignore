@@ -9,3 +9,4 @@ env/
 .DS_Store
 Thumbs.db
 chroma_db/
+qa_safe_results.db

@@ -410,18 +410,38 @@ def run_tests():
                 final_results.append(result)
 
                 if result.get("result") == "FAIL":
-                    print("\n[ADAPTIVE TRIGGER] Target AI failed. Initiating Adaptive Red Agent...")
-                    
-                    adaptive_attack = red_agent.generate_adaptive_attack(
-                        parent_test=result,
-                        previous_result="FAIL",
-                        previous_reason=result.get("reason", "Unknown failure"),
-                        iteration=1
+                    print(
+                        "\n[ADAPTIVE TRIGGER] "
+                        "Target AI failed. Initiating Adaptive Red Agent..."
                     )
 
-                    if adaptive_attack:
-                        print(f"\n[ADAPTIVE ATTACK #2] Strategy: {adaptive_attack.get('strategy')}")
-                        
+                    max_adaptive_iterations = 3
+                    iteration = 1
+                    previous_result = result
+
+                    while (
+                            previous_result.get("result") == "FAIL"
+                            and iteration <= max_adaptive_iterations
+                    ):
+                        adaptive_attack = red_agent.generate_adaptive_attack(
+                            parent_test=previous_result,
+                            previous_result=previous_result.get("result"),
+                            previous_reason=previous_result.get(
+                                "reason",
+                                "Unknown failure"
+                            ),
+                            iteration=iteration,
+                            max_iterations=max_adaptive_iterations
+                        )
+
+                        if not adaptive_attack:
+                            break
+
+                        print(
+                            f"\n[ADAPTIVE ATTACK #{iteration + 1}] "
+                            f"Strategy: {adaptive_attack.get('strategy')}"
+                        )
+
                         adaptive_result = run_single_test(
                             red_agent=red_agent,
                             target_ai=target_ai,
@@ -429,7 +449,15 @@ def run_tests():
                             used_test_ids=used_test_ids,
                             pre_generated_record=adaptive_attack
                         )
+
                         final_results.append(adaptive_result)
+
+                        # PASS or ERROR stops the adaptive feedback chain.
+                        if adaptive_result.get("result") != "FAIL":
+                            break
+
+                        previous_result = adaptive_result
+                        iteration += 1
 
             except Exception as error:
                 result = {

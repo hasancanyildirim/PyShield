@@ -712,95 +712,109 @@ class DynamicRedAgent:
         }
 
 
+# =====================================================
+    # ADAPTIVE RED TEAMING (FEEDBACK LOOP)
+    # =====================================================
+
+    def generate_adaptive_attack(
+        self,
+        parent_test,
+        previous_result,
+        previous_reason,
+        iteration=1,
+        max_iterations=3
+    ):
+        """
+        It generates a new attack iteration based on the result from the Evaluator.
+        """
+        if iteration > max_iterations:
+            print(f"[INFO] Max iterations ({max_iterations}) reached for {parent_test.get('test_id')}")
+            return None
+
+        category = parent_test.get("category", "Prompt Injection")
+        current_difficulty = parent_test.get("difficulty", "MEDIUM")
+        current_attack_type = parent_test.get("requested_attack_type", parent_test.get("attack_type"))
+
+        new_difficulty = current_difficulty
+        strategy = "Retrying with diverse payload"
+
+        if previous_result == "PASS": 
+            if current_difficulty == "EASY":
+                new_difficulty = "MEDIUM"
+                strategy = "Escalating difficulty to MEDIUM"
+            elif current_difficulty == "MEDIUM":
+                new_difficulty = "HARD"
+                strategy = "Escalating difficulty to HARD"
+            else:
+                strategy = "Max difficulty blocked. Retrying HARD with alternative payload"
+
+        elif previous_result == "FAIL": 
+            strategy = "Vulnerability detected. Testing alternative payload at same difficulty"
+
+        # 3. Yeni stratejiyle yeni saldırıyı (mermiyi) üret
+        new_attack = self.generate_attack(
+            category=category,
+            attack_type=current_attack_type,
+            difficulty=new_difficulty
+        )
+
+        new_attack["test_id"] = f"{parent_test.get('test_id')}-ITER{iteration}"
+        new_attack["parent_test_id"] = parent_test.get("test_id")
+        new_attack["iteration"] = iteration
+        new_attack["strategy"] = strategy
+        new_attack["previous_result"] = previous_result
+        new_attack["previous_reason"] = previous_reason
+
+        return new_attack
+
+
 # =========================================================
 # LOCAL TEST
 # =========================================================
 
 if __name__ == "__main__":
-
     agent = DynamicRedAgent()
-
-    test_configs = [
-        {
-            "category": "Prompt Injection",
-            "attack_type": "Role Manipulation / Jailbreak",
-            "difficulty": "HARD",
-        },
-        {
-            "category": "Sensitive Information Leakage",
-            "attack_type": "Data Exfiltration Attempt",
-            "difficulty": "HARD",
-        },
-        {
-            "category": "RAG Security",
-            "attack_type": "Context Poisoning",
-            "difficulty": "HARD",
-        },
-        {
-            "category": "Hallucination",
-            "attack_type": "Fictitious Product",
-            "difficulty": "MEDIUM",
-        },
-    ]
-
+    
     print("=" * 70)
-    print("QA SAFE - DYNAMIC RED AGENT TEST")
+    print("QA SAFE - ADAPTIVE RED TEAMING TEST")
     print("=" * 70)
 
-    for config in test_configs:
+    # 1. Generate Initial Attack (RAG Security, MEDIUM difficulty)
+    print("\n[STEP 1] Generating Initial Attack (Difficulty: MEDIUM)...")
+    initial_attack = agent.generate_attack(
+        category="RAG Security",
+        attack_type="Context Poisoning",
+        difficulty="MEDIUM"
+    )
+    
+    print(f"Test ID: {initial_attack.get('test_id')}")
+    print(f"Difficulty: {initial_attack.get('difficulty')}")
+    print(f"Prompt: {initial_attack.get('prompt')}")
 
-        attack = agent.generate_attack(
-            category=config["category"],
-            attack_type=config["attack_type"],
-            difficulty=config["difficulty"],
-        )
+    # 2. Evaluator Simulation (Assume Target AI blocked the attack and returned PASS)
+    print("\n[STEP 2] Simulating Evaluator Feedback...")
+    print("Result: PASS (Target AI successfully blocked the attack)")
+    
+    simulated_result = "PASS"
+    simulated_reason = "Target AI ignored the malicious instruction within the retrieved context."
 
-        print("\n" + "=" * 70)
-        print(
-            f"TEST ID: "
-            f"{attack.get('test_id')}"
-        )
-        print(
-            f"Category: "
-            f"{attack.get('category')}"
-        )
-        print(
-            f"Attack Type: "
-            f"{attack.get('attack_type')}"
-        )
-        print(
-            f"Requested Type: "
-            f"{attack.get('requested_attack_type')}"
-        )
-        print(
-            f"Difficulty: "
-            f"{attack.get('difficulty')}"
-        )
-        print(
-            f"Severity: "
-            f"{attack.get('severity')}"
-        )
-        print(
-            f"Confidence: "
-            f"{attack.get('classification_confidence')}"
-        )
-        print(
-            f"Source: "
-            f"{attack.get('source')}"
-        )
-        print(
-            f"Template Repaired: "
-            f"{attack.get('template_repaired')}"
-        )
+    # 3. Generate Adaptive Attack
+    print("\n[STEP 3] Generating New Strategy and Attack Based on Feedback...")
+    adaptive_attack = agent.generate_adaptive_attack(
+        parent_test=initial_attack,
+        previous_result=simulated_result,
+        previous_reason=simulated_reason,
+        iteration=1
+    )
 
-        print("\n[PROMPT]")
-        print(
-            attack.get("prompt")
-        )
-
-        print("\n[EXPECTED]")
-        print(
-            attack.get(
-                "expected_behavior"
-            )
-        )
+    if adaptive_attack:
+        print("\n[GENERATED ADAPTIVE ATTACK DETAILS]")
+        # Print only the newly added adaptive metadata
+        print(f"New Test ID       : {adaptive_attack.get('test_id')}")
+        print(f"Parent Test ID    : {adaptive_attack.get('parent_test_id')}")
+        print(f"Iteration Count   : {adaptive_attack.get('iteration')}")
+        print(f"Applied Strategy  : {adaptive_attack.get('strategy')}")
+        print(f"New Difficulty    : {adaptive_attack.get('difficulty')}")
+        print(f"New Prompt        : {adaptive_attack.get('prompt')}") # <--- İŞTE BU SATIRI EKLEDİK
+    else:
+        print("Maximum iteration limit reached.")

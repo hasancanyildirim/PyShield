@@ -35,89 +35,66 @@ def run_single_test(
     red_agent,
     target_ai,
     config,
-    used_test_ids
+    used_test_ids,
+    pre_generated_record=None
 ):
     """
     Generates and executes one test.
-
-    Selection strategy:
-    1. Try requested attack type.
-    2. Avoid duplicate test IDs.
-    3. If the exact attack-type pool is too small,
-       broaden selection inside the same category.
-    4. Execute Target AI.
-    5. Evaluate the response.
     """
 
     test_record = None
     candidate = None
 
-    # -----------------------------------------------------
-    # RED AGENT - PRIMARY SELECTION
-    # -----------------------------------------------------
-
-    for _ in range(20):
-
-        candidate = red_agent.generate_attack(
-            category=config["category"],
-            attack_type=config["attack_type"],
-            difficulty=config["difficulty"],
-        )
-
-        candidate_id = candidate.get(
-            "test_id"
-        )
-
-        if candidate_id not in used_test_ids:
-            test_record = candidate
-            break
-
-    # -----------------------------------------------------
-    # RED AGENT - DIVERSE FALLBACK SELECTION
-    # -----------------------------------------------------
-
-    if test_record is None:
-
-        for _ in range(30):
-
-            candidate = red_agent.generate_attack(
-                category=config["category"],
-                attack_type="__DIVERSE_SELECTION__",
-                difficulty=config["difficulty"],
-            )
-
-            candidate_id = candidate.get(
-                "test_id"
-            )
-
-            if candidate_id not in used_test_ids:
-                test_record = candidate
-                break
-
-    # -----------------------------------------------------
-    # ABSOLUTE LAST RESORT
-    # -----------------------------------------------------
-
-    if test_record is None:
-
-        if candidate is None:
-
+    if pre_generated_record:
+        test_record = pre_generated_record
+        test_id = test_record.get("test_id")
+        if test_id:
+            used_test_ids.add(test_id)
+    else:
+        # -----------------------------------------------------
+        # RED AGENT - PRIMARY SELECTION
+        # -----------------------------------------------------
+        for _ in range(20):
             candidate = red_agent.generate_attack(
                 category=config["category"],
                 attack_type=config["attack_type"],
                 difficulty=config["difficulty"],
             )
+            candidate_id = candidate.get("test_id")
+            if candidate_id not in used_test_ids:
+                test_record = candidate
+                break
 
-        test_record = candidate
+        # -----------------------------------------------------
+        # RED AGENT - DIVERSE FALLBACK SELECTION
+        # -----------------------------------------------------
+        if test_record is None:
+            for _ in range(30):
+                candidate = red_agent.generate_attack(
+                    category=config["category"],
+                    attack_type="__DIVERSE_SELECTION__",
+                    difficulty=config["difficulty"],
+                )
+                candidate_id = candidate.get("test_id")
+                if candidate_id not in used_test_ids:
+                    test_record = candidate
+                    break
 
-    test_id = test_record.get(
-        "test_id"
-    )
+        # -----------------------------------------------------
+        # ABSOLUTE LAST RESORT
+        # -----------------------------------------------------
+        if test_record is None:
+            if candidate is None:
+                candidate = red_agent.generate_attack(
+                    category=config["category"],
+                    attack_type=config["attack_type"],
+                    difficulty=config["difficulty"],
+                )
+            test_record = candidate
 
-    if test_id:
-        used_test_ids.add(
-            test_id
-        )
+        test_id = test_record.get("test_id")
+        if test_id:
+            used_test_ids.add(test_id)
 
     # -----------------------------------------------------
     # PRINT TEST INFORMATION
@@ -419,20 +396,10 @@ def run_tests():
             "#" * 70
         )
 
-        for test_number in range(
-            1,
-            TESTS_PER_CATEGORY + 1
-        ):
-
-            print(
-                f"\nRunning "
-                f"{config['category']} "
-                f"test {test_number}/"
-                f"{TESTS_PER_CATEGORY}"
-            )
+        for test_number in range(1, TESTS_PER_CATEGORY + 1):
+            print(f"\nRunning {config['category']} test {test_number}/{TESTS_PER_CATEGORY}")
 
             try:
-
                 result = run_single_test(
                     red_agent=red_agent,
                     target_ai=target_ai,
@@ -440,42 +407,46 @@ def run_tests():
                     used_test_ids=used_test_ids
                 )
 
-            except Exception as error:
+                final_results.append(result)
 
+                if result.get("result") == "FAIL":
+                    print("\n[ADAPTIVE TRIGGER] Target AI failed. Initiating Adaptive Red Agent...")
+                    
+                    adaptive_attack = red_agent.generate_adaptive_attack(
+                        parent_test=result,
+                        previous_result="FAIL",
+                        previous_reason=result.get("reason", "Unknown failure"),
+                        iteration=1
+                    )
+
+                    if adaptive_attack:
+                        print(f"\n[ADAPTIVE ATTACK #2] Strategy: {adaptive_attack.get('strategy')}")
+                        
+                        adaptive_result = run_single_test(
+                            red_agent=red_agent,
+                            target_ai=target_ai,
+                            config=config,
+                            used_test_ids=used_test_ids,
+                            pre_generated_record=adaptive_attack
+                        )
+                        final_results.append(adaptive_result)
+
+            except Exception as error:
                 result = {
                     "test_id": "ORCHESTRATOR-ERROR",
-                    "category": config[
-                        "category"
-                    ],
-                    "attack_type": config[
-                        "attack_type"
-                    ],
-                    "difficulty": config[
-                        "difficulty"
-                    ],
+                    "category": config["category"],
+                    "attack_type": config["attack_type"],
+                    "difficulty": config["difficulty"],
                     "severity": "UNKNOWN",
                     "source": "ORCHESTRATOR",
-                    "classification_confidence": (
-                        "UNKNOWN"
-                    ),
+                    "classification_confidence": "UNKNOWN",
                     "result": "ERROR",
-                    "reason": (
-                        f"Orchestrator failed: {error}"
-                    ),
+                    "reason": f"Orchestrator failed: {error}",
                     "evaluation_method": "ERROR",
                 }
-
-                print(
-                    "\n[ORCHESTRATOR ERROR]"
-                )
-
-                print(
-                    error
-                )
-
-            final_results.append(
-                result
-            )
+                print("\n[ORCHESTRATOR ERROR]")
+                print(error)
+                final_results.append(result)
 
     # -----------------------------------------------------
     # CATEGORY STATISTICS

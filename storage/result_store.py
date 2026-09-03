@@ -420,3 +420,30 @@ class ResultStore:
                 failed_tests.append(test_dict)
 
             return failed_tests
+
+    def list_runs(self) -> List[Dict[str, Any]]:
+        """
+        Retrieves all campaign runs ordered by creation timestamp descending.
+
+        Returns:
+            list[dict]: List of campaign run records with parsed summaries.
+        """
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM campaign_runs ORDER BY created_at DESC;"
+            )
+            rows = cursor.fetchall()
+            runs = []
+            for row in rows:
+                campaign_dict = dict(row)
+                summary_raw = campaign_dict.get("summary_json")
+                if summary_raw:
+                    try:
+                        campaign_dict["summary"] = json.loads(summary_raw)
+                    except (json.JSONDecodeError, TypeError):
+                        campaign_dict["summary"] = {}
+                else:
+                    campaign_dict["summary"] = {}
+                runs.append(campaign_dict)
+            return runs

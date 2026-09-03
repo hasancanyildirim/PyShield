@@ -3,3 +3,5 @@ ollama
 chromadb
 pyyaml
 requests
+streamlit
+pandas

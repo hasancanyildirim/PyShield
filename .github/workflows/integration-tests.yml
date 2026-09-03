@@ -3,6 +3,7 @@ name: PyShield Integration Tests
 on:
   push:
     branches:
+      - main
       - hasan-campaign-integration
   workflow_dispatch:
 

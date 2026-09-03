@@ -1,0 +1,29 @@
+name: PyShield Integration Tests
+
+on:
+  push:
+    branches:
+      - hasan-campaign-integration
+  workflow_dispatch:
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run integration and regression tests
+        run: |
+          pytest -q test_campaign.py test_campaign_integration.py test_result_store.py test_adaptive_e2e.py

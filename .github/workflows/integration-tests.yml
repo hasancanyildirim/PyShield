@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - hasan-campaign-integration
+      - hasan-feedback-guided-adaptive
   workflow_dispatch:
 
 jobs:
@@ -27,4 +28,4 @@ jobs:
 
       - name: Run integration and regression tests
         run: |
-          pytest -q test_campaign.py test_campaign_integration.py test_result_store.py test_adaptive_e2e.py
+          pytest -q test_campaign.py test_campaign_integration.py test_result_store.py test_adaptive_e2e.py test_feedback_guided_adaptive.py

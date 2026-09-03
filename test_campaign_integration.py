@@ -8,6 +8,34 @@ from campaign.integration import run_and_store_campaign, validate_demo_contract
 from storage.result_store import ResultStore
 
 
+class FakeAdaptiveRedAgent:
+    def generate_adaptive_attack(
+        self,
+        parent_test,
+        previous_result,
+        previous_reason,
+        iteration,
+        max_iterations,
+    ):
+        if iteration > max_iterations:
+            return None
+        return {
+            "test_id": f"ADAPT-{iteration}",
+            "parent_test_id": parent_test.get("test_id"),
+            "iteration": iteration,
+            "strategy": "targeted_follow_up",
+            "previous_result": previous_result,
+            "previous_reason": previous_reason,
+            "category": parent_test.get("category", "Prompt Injection"),
+            "attack_type": parent_test.get("attack_type", "Role Manipulation / Jailbreak"),
+            "difficulty": parent_test.get("difficulty", "HARD"),
+            "severity": parent_test.get("severity", "HIGH"),
+            "source": "ADAPTIVE_TEST",
+            "classification_confidence": "HIGH",
+            "prompt": f"adaptive-attack-{iteration}",
+        }
+
+
 class CampaignIntegrationTests(unittest.TestCase):
     def _config(self, difficulty="HARD", tests_per_category=1, categories=None):
         return {
@@ -57,6 +85,7 @@ class CampaignIntegrationTests(unittest.TestCase):
             self.assertEqual(len(persisted["results"]), 1)
             self.assertEqual(persisted["summary"]["pass"], 1)
             self.assertEqual(persisted["summary"]["fail"], 0)
+            self.assertEqual(store.list_runs()[0]["campaign_id"], output["campaign_id"])
 
     def test_metrics_and_category_contract_match_results(self):
         controlled = [
@@ -170,6 +199,47 @@ class CampaignIntegrationTests(unittest.TestCase):
                 self.assertEqual(output["summary"]["error"], 0)
                 self.assertEqual(output["summary"]["fail"], 0)
                 self.assertEqual(output["summary"]["pass_rate"], 100.0)
+
+    def test_fail_triggers_adaptive_follow_up_and_persists_metadata(self):
+        initial_fail = self._result("FAIL", "HIGH", index=1)
+        adaptive_pass = self._result("PASS", "HIGH", index=2)
+        adaptive_pass.update(
+            {
+                "test_id": "ADAPT-1",
+                "parent_test_id": "TEST-1",
+                "iteration": 1,
+                "strategy": "targeted_follow_up",
+                "previous_result": "FAIL",
+                "previous_reason": "controlled-fail",
+                "prompt": "adaptive-attack-1",
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = ResultStore(os.path.join(tmpdir, "results.db"))
+            with patch(
+                "campaign.campaign_runner.run_single_test",
+                side_effect=[initial_fail, adaptive_pass],
+            ):
+                output = run_and_store_campaign(
+                    self._config(),
+                    result_store=store,
+                    red_agent=FakeAdaptiveRedAgent(),
+                    target_ai=object(),
+                )
+
+            self.assertEqual(output["summary"]["total"], 2)
+            self.assertEqual(output["summary"]["fail"], 1)
+            self.assertEqual(output["summary"]["pass"], 1)
+            self.assertEqual(len(output["adaptive_iterations"]), 1)
+            self.assertEqual(output["adaptive_iterations"][0]["parent_test_id"], "TEST-1")
+
+            persisted = store.get_run(output["campaign_id"])
+            self.assertEqual(len(persisted["results"]), 2)
+            persisted_adaptive = persisted["results"][1]
+            self.assertEqual(persisted_adaptive["parent_test_id"], "TEST-1")
+            self.assertEqual(persisted_adaptive["iteration"], 1)
+            self.assertEqual(persisted_adaptive["strategy"], "targeted_follow_up")
 
 
 if __name__ == "__main__":

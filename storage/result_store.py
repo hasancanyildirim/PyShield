@@ -13,9 +13,7 @@ from typing import Any, Dict, Generator, List, Optional
 
 
 class ResultStore:
-    """
-    SQLite-backed storage manager for campaign execution runs and individual test results.
-    """
+    """SQLite-backed storage manager for campaign execution runs and test results."""
 
     def __init__(self, db_path: str = "qa_safe_results.db") -> None:
         self.db_path = db_path
@@ -77,6 +75,11 @@ class ResultStore:
                     evaluation_method TEXT,
                     confidence TEXT,
                     source TEXT,
+                    parent_test_id TEXT,
+                    iteration INTEGER,
+                    strategy TEXT,
+                    previous_result TEXT,
+                    previous_reason TEXT,
                     retrieved_context_json TEXT,
                     visibility_json TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -84,6 +87,23 @@ class ResultStore:
                 );
                 """
             )
+
+            # Backward-compatible migration for existing local databases.
+            cursor.execute("PRAGMA table_info(test_results);")
+            existing_columns = {row[1] for row in cursor.fetchall()}
+            adaptive_columns = {
+                "parent_test_id": "TEXT",
+                "iteration": "INTEGER",
+                "strategy": "TEXT",
+                "previous_result": "TEXT",
+                "previous_reason": "TEXT",
+            }
+            for column_name, column_type in adaptive_columns.items():
+                if column_name not in existing_columns:
+                    cursor.execute(
+                        f"ALTER TABLE test_results ADD COLUMN {column_name} {column_type};"
+                    )
+
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_test_results_campaign_id ON test_results(campaign_id);"
             )
@@ -156,9 +176,10 @@ class ResultStore:
                     INSERT INTO test_results (
                         campaign_id, test_id, category, attack_type, difficulty,
                         severity, attack_prompt, target_response, result, reason,
-                        evaluation_method, confidence, source,
+                        evaluation_method, confidence, source, parent_test_id,
+                        iteration, strategy, previous_result, previous_reason,
                         retrieved_context_json, visibility_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                     """,
                     (
                         campaign_id,
@@ -174,6 +195,11 @@ class ResultStore:
                         test.get("evaluation_method"),
                         confidence,
                         test.get("source"),
+                        test.get("parent_test_id"),
+                        test.get("iteration"),
+                        test.get("strategy"),
+                        test.get("previous_result"),
+                        test.get("previous_reason"),
                         json.dumps(retrieved_context) if retrieved_context is not None else None,
                         json.dumps(visibility) if visibility is not None else None,
                     ),
@@ -209,37 +235,36 @@ class ResultStore:
                 "SELECT * FROM test_results WHERE campaign_id = ? ORDER BY id ASC;",
                 (campaign_id,),
             )
-            test_rows = cursor.fetchall()
-            results = []
-
-            for row in test_rows:
-                test_dict = dict(row)
-                retrieved_context_raw = test_dict.pop("retrieved_context_json", None)
-                if retrieved_context_raw:
-                    try:
-                        test_dict["retrieved_context"] = json.loads(retrieved_context_raw)
-                    except (json.JSONDecodeError, TypeError):
-                        test_dict["retrieved_context"] = []
-                else:
-                    test_dict["retrieved_context"] = []
-
-                visibility_raw = test_dict.pop("visibility_json", None)
-                if visibility_raw:
-                    try:
-                        test_dict["visibility"] = json.loads(visibility_raw)
-                    except (json.JSONDecodeError, TypeError):
-                        test_dict["visibility"] = []
-                else:
-                    test_dict["visibility"] = []
-
-                if "attack_prompt" in test_dict and "prompt" not in test_dict:
-                    test_dict["prompt"] = test_dict["attack_prompt"]
-                if "confidence" in test_dict and "classification_confidence" not in test_dict:
-                    test_dict["classification_confidence"] = test_dict["confidence"]
-                results.append(test_dict)
-
+            results = [self._decode_test_row(row) for row in cursor.fetchall()]
             campaign_dict["results"] = results
             return campaign_dict
+
+    @staticmethod
+    def _decode_test_row(row: sqlite3.Row) -> Dict[str, Any]:
+        test_dict = dict(row)
+        retrieved_context_raw = test_dict.pop("retrieved_context_json", None)
+        if retrieved_context_raw:
+            try:
+                test_dict["retrieved_context"] = json.loads(retrieved_context_raw)
+            except (json.JSONDecodeError, TypeError):
+                test_dict["retrieved_context"] = []
+        else:
+            test_dict["retrieved_context"] = []
+
+        visibility_raw = test_dict.pop("visibility_json", None)
+        if visibility_raw:
+            try:
+                test_dict["visibility"] = json.loads(visibility_raw)
+            except (json.JSONDecodeError, TypeError):
+                test_dict["visibility"] = []
+        else:
+            test_dict["visibility"] = []
+
+        if "attack_prompt" in test_dict and "prompt" not in test_dict:
+            test_dict["prompt"] = test_dict["attack_prompt"]
+        if "confidence" in test_dict and "classification_confidence" not in test_dict:
+            test_dict["classification_confidence"] = test_dict["confidence"]
+        return test_dict
 
     def get_failed_tests(self, campaign_id: Optional[str] = None) -> List[Dict[str, Any]]:
         with self._connection() as conn:
@@ -262,34 +287,7 @@ class ResultStore:
                     """
                 )
 
-            failed_tests = []
-            for row in cursor.fetchall():
-                test_dict = dict(row)
-                retrieved_context_raw = test_dict.pop("retrieved_context_json", None)
-                if retrieved_context_raw:
-                    try:
-                        test_dict["retrieved_context"] = json.loads(retrieved_context_raw)
-                    except (json.JSONDecodeError, TypeError):
-                        test_dict["retrieved_context"] = []
-                else:
-                    test_dict["retrieved_context"] = []
-
-                visibility_raw = test_dict.pop("visibility_json", None)
-                if visibility_raw:
-                    try:
-                        test_dict["visibility"] = json.loads(visibility_raw)
-                    except (json.JSONDecodeError, TypeError):
-                        test_dict["visibility"] = []
-                else:
-                    test_dict["visibility"] = []
-
-                if "attack_prompt" in test_dict and "prompt" not in test_dict:
-                    test_dict["prompt"] = test_dict["attack_prompt"]
-                if "confidence" in test_dict and "classification_confidence" not in test_dict:
-                    test_dict["classification_confidence"] = test_dict["confidence"]
-                failed_tests.append(test_dict)
-
-            return failed_tests
+            return [self._decode_test_row(row) for row in cursor.fetchall()]
 
     def list_runs(self) -> List[Dict[str, Any]]:
         """Return campaign history ordered newest-first for dashboard consumption."""

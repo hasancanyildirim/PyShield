@@ -5,6 +5,7 @@ from typing import Optional
 
 from campaign import campaign_runner
 from storage.result_store import ResultStore
+from reports.report_generator import generate_security_report
 
 
 REQUIRED_REPORTING_FIELDS = {
@@ -336,6 +337,8 @@ def run_and_store_campaign(
             )
 
     validate_demo_contract(campaign_output)
+
+    campaign_output["security_report"] = generate_security_report(campaign_output)
 
     store = result_store or ResultStore(db_path=db_path)
     campaign_id = store.save_run(campaign_output)

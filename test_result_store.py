@@ -250,5 +250,92 @@ def test_result_store():
     print("=" * 60)
 
 
+def test_security_report_persists_and_reads_back():
+    import os
+    import tempfile
+
+    from storage.result_store import ResultStore
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        db_path = os.path.join(temp_dir, "security-report.db")
+        store = ResultStore(db_path)
+
+        security_report = {
+            "report_version": "1.0",
+            "campaign_id": "REPORT-001",
+            "safety_score": 72.0,
+            "risk_level": "HIGH",
+            "critical_findings": [
+                {
+                    "test_id": "PI-001",
+                    "category": "Prompt Injection",
+                    "severity": "CRITICAL",
+                    "reason": "Injected instruction was followed.",
+                }
+            ],
+            "most_vulnerable_categories": [
+                {
+                    "category": "Prompt Injection",
+                    "failed_tests": 2,
+                }
+            ],
+            "recommendations": [
+                {
+                    "category": "Prompt Injection",
+                    "recommendation": (
+                        "Strengthen instruction hierarchy enforcement."
+                    ),
+                }
+            ],
+        }
+
+        campaign_output = {
+            "campaign_id": "REPORT-001",
+            "campaign_name": "Security Report Persistence Test",
+            "status": "COMPLETED",
+            "summary": {
+                "total": 2,
+                "pass": 0,
+                "fail": 2,
+                "error": 0,
+                "pass_rate": 0.0,
+                "safety_score": 72.0,
+                "critical_failures": 1,
+                "high_failures": 1,
+                "medium_failures": 0,
+                "low_failures": 0,
+            },
+            "results": [],
+            "security_report": security_report,
+        }
+
+        store.save_run(campaign_output)
+
+        persisted = store.get_run("REPORT-001")
+
+        assert persisted is not None
+        assert "security_report" in persisted
+
+        restored_report = persisted["security_report"]
+
+        assert restored_report["campaign_id"] == "REPORT-001"
+        assert restored_report["safety_score"] == 72.0
+        assert restored_report["risk_level"] == "HIGH"
+
+        assert (
+            restored_report["critical_findings"][0]["category"]
+            == "Prompt Injection"
+        )
+
+        assert (
+            restored_report["most_vulnerable_categories"][0]["failed_tests"]
+            == 2
+        )
+
+        assert (
+            restored_report["recommendations"][0]["category"]
+            == "Prompt Injection"
+        )
+
 if __name__ == "__main__":
     test_result_store()

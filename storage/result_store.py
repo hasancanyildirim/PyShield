@@ -1,8 +1,8 @@
 """
 AI-QA Shield - Persistent Result Storage Module.
 
-Provides SQLite-backed persistence for security test campaigns and individual test execution
-results using Python's built-in sqlite3 module.
+Provides SQLite-backed persistence for security test campaigns and individual
+test execution results using Python's built-in sqlite3 module.
 """
 
 from contextlib import contextmanager
@@ -22,12 +22,14 @@ class ResultStore:
     @contextmanager
     def _connection(self) -> Generator[sqlite3.Connection, None, None]:
         parent_dir = os.path.dirname(self.db_path)
+
         if parent_dir:
             os.makedirs(parent_dir, exist_ok=True)
 
         conn = sqlite3.connect(self.db_path)
         conn.execute("PRAGMA foreign_keys = ON;")
         conn.row_factory = sqlite3.Row
+
         try:
             with conn:
                 yield conn
@@ -35,8 +37,15 @@ class ResultStore:
             conn.close()
 
     def _init_db(self) -> None:
+        """Create database tables and apply backward-compatible migrations."""
+
         with self._connection() as conn:
             cursor = conn.cursor()
+
+            # ---------------------------------------------------------
+            # Campaign runs
+            # ---------------------------------------------------------
+
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS campaign_runs (
@@ -54,10 +63,33 @@ class ResultStore:
                     medium_failures INTEGER,
                     low_failures INTEGER,
                     summary_json TEXT,
+                    security_report_json TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
                 """
             )
+
+            # Backward-compatible migration for databases created
+            # before automatic security reporting was introduced.
+            cursor.execute("PRAGMA table_info(campaign_runs);")
+
+            campaign_columns = {
+                row[1]
+                for row in cursor.fetchall()
+            }
+
+            if "security_report_json" not in campaign_columns:
+                cursor.execute(
+                    """
+                    ALTER TABLE campaign_runs
+                    ADD COLUMN security_report_json TEXT;
+                    """
+                )
+
+            # ---------------------------------------------------------
+            # Individual test results
+            # ---------------------------------------------------------
+
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS test_results (
@@ -83,14 +115,22 @@ class ResultStore:
                     retrieved_context_json TEXT,
                     visibility_json TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (campaign_id) REFERENCES campaign_runs (campaign_id) ON DELETE CASCADE
+                    FOREIGN KEY (campaign_id)
+                        REFERENCES campaign_runs (campaign_id)
+                        ON DELETE CASCADE
                 );
                 """
             )
 
-            # Backward-compatible migration for existing local databases.
+            # Backward-compatible migration for adaptive red-team
+            # metadata in existing local databases.
             cursor.execute("PRAGMA table_info(test_results);")
-            existing_columns = {row[1] for row in cursor.fetchall()}
+
+            existing_columns = {
+                row[1]
+                for row in cursor.fetchall()
+            }
+
             adaptive_columns = {
                 "parent_test_id": "TEXT",
                 "iteration": "INTEGER",
@@ -98,182 +138,559 @@ class ResultStore:
                 "previous_result": "TEXT",
                 "previous_reason": "TEXT",
             }
+
             for column_name, column_type in adaptive_columns.items():
                 if column_name not in existing_columns:
                     cursor.execute(
-                        f"ALTER TABLE test_results ADD COLUMN {column_name} {column_type};"
+                        f"""
+                        ALTER TABLE test_results
+                        ADD COLUMN {column_name} {column_type};
+                        """
                     )
 
+            # ---------------------------------------------------------
+            # Indexes
+            # ---------------------------------------------------------
+
             cursor.execute(
-                "CREATE INDEX IF NOT EXISTS idx_test_results_campaign_id ON test_results(campaign_id);"
+                """
+                CREATE INDEX IF NOT EXISTS
+                idx_test_results_campaign_id
+                ON test_results(campaign_id);
+                """
             )
+
             cursor.execute(
-                "CREATE INDEX IF NOT EXISTS idx_test_results_result ON test_results(result);"
+                """
+                CREATE INDEX IF NOT EXISTS
+                idx_test_results_result
+                ON test_results(result);
+                """
             )
+
             cursor.execute(
-                "CREATE INDEX IF NOT EXISTS idx_test_results_category ON test_results(category);"
+                """
+                CREATE INDEX IF NOT EXISTS
+                idx_test_results_category
+                ON test_results(category);
+                """
             )
 
     def save_run(self, campaign_output: Dict[str, Any]) -> str:
+        """Persist a complete campaign execution."""
+
         if not isinstance(campaign_output, dict):
-            raise ValueError("campaign_output must be a dictionary.")
+            raise ValueError(
+                "campaign_output must be a dictionary."
+            )
 
         campaign_id = campaign_output.get("campaign_id")
+
         if not campaign_id or not isinstance(campaign_id, str):
-            raise ValueError("campaign_output must contain a valid non-empty 'campaign_id'.")
+            raise ValueError(
+                "campaign_output must contain a valid "
+                "non-empty 'campaign_id'."
+            )
 
-        campaign_name = campaign_output.get("campaign_name", "Security Test Campaign")
-        status = campaign_output.get("status", "COMPLETED")
-        summary = campaign_output.get("summary", {})
-        results = campaign_output.get("results", [])
+        campaign_name = campaign_output.get(
+            "campaign_name",
+            "Security Test Campaign",
+        )
 
-        total_tests = summary.get("total", len(results)) if isinstance(summary, dict) else len(results)
-        passed_tests = summary.get("pass", 0) if isinstance(summary, dict) else 0
-        failed_tests = summary.get("fail", 0) if isinstance(summary, dict) else 0
-        error_tests = summary.get("error", 0) if isinstance(summary, dict) else 0
-        pass_rate = summary.get("pass_rate", 0.0) if isinstance(summary, dict) else 0.0
-        safety_score = summary.get("safety_score", 0.0) if isinstance(summary, dict) else 0.0
-        critical_failures = summary.get("critical_failures", 0) if isinstance(summary, dict) else 0
-        high_failures = summary.get("high_failures", 0) if isinstance(summary, dict) else 0
-        medium_failures = summary.get("medium_failures", 0) if isinstance(summary, dict) else 0
-        low_failures = summary.get("low_failures", 0) if isinstance(summary, dict) else 0
-        summary_json = json.dumps(summary) if summary is not None else None
+        status = campaign_output.get(
+            "status",
+            "COMPLETED",
+        )
+
+        summary = campaign_output.get(
+            "summary",
+            {},
+        )
+
+        results = campaign_output.get(
+            "results",
+            [],
+        )
+
+        # ---------------------------------------------------------
+        # Campaign metrics
+        # ---------------------------------------------------------
+
+        total_tests = (
+            summary.get("total", len(results))
+            if isinstance(summary, dict)
+            else len(results)
+        )
+
+        passed_tests = (
+            summary.get("pass", 0)
+            if isinstance(summary, dict)
+            else 0
+        )
+
+        failed_tests = (
+            summary.get("fail", 0)
+            if isinstance(summary, dict)
+            else 0
+        )
+
+        error_tests = (
+            summary.get("error", 0)
+            if isinstance(summary, dict)
+            else 0
+        )
+
+        pass_rate = (
+            summary.get("pass_rate", 0.0)
+            if isinstance(summary, dict)
+            else 0.0
+        )
+
+        safety_score = (
+            summary.get("safety_score", 0.0)
+            if isinstance(summary, dict)
+            else 0.0
+        )
+
+        critical_failures = (
+            summary.get("critical_failures", 0)
+            if isinstance(summary, dict)
+            else 0
+        )
+
+        high_failures = (
+            summary.get("high_failures", 0)
+            if isinstance(summary, dict)
+            else 0
+        )
+
+        medium_failures = (
+            summary.get("medium_failures", 0)
+            if isinstance(summary, dict)
+            else 0
+        )
+
+        low_failures = (
+            summary.get("low_failures", 0)
+            if isinstance(summary, dict)
+            else 0
+        )
+
+        # ---------------------------------------------------------
+        # Structured JSON fields
+        # ---------------------------------------------------------
+
+        summary_json = (
+            json.dumps(summary)
+            if summary is not None
+            else None
+        )
+
+        security_report = campaign_output.get(
+            "security_report"
+        )
+
+        security_report_json = (
+            json.dumps(security_report)
+            if security_report is not None
+            else None
+        )
+
+        # ---------------------------------------------------------
+        # Persistence
+        # ---------------------------------------------------------
 
         with self._connection() as conn:
             cursor = conn.cursor()
+
             cursor.execute(
                 """
                 INSERT OR REPLACE INTO campaign_runs (
-                    campaign_id, campaign_name, status, total_tests, passed_tests,
-                    failed_tests, error_tests, pass_rate, safety_score,
-                    critical_failures, high_failures, medium_failures,
-                    low_failures, summary_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    campaign_id,
+                    campaign_name,
+                    status,
+                    total_tests,
+                    passed_tests,
+                    failed_tests,
+                    error_tests,
+                    pass_rate,
+                    safety_score,
+                    critical_failures,
+                    high_failures,
+                    medium_failures,
+                    low_failures,
+                    summary_json,
+                    security_report_json
+                )
+                VALUES (
+                    ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?
+                );
                 """,
                 (
-                    campaign_id, campaign_name, status, total_tests, passed_tests,
-                    failed_tests, error_tests, pass_rate, safety_score,
-                    critical_failures, high_failures, medium_failures,
-                    low_failures, summary_json,
+                    campaign_id,
+                    campaign_name,
+                    status,
+                    total_tests,
+                    passed_tests,
+                    failed_tests,
+                    error_tests,
+                    pass_rate,
+                    safety_score,
+                    critical_failures,
+                    high_failures,
+                    medium_failures,
+                    low_failures,
+                    summary_json,
+                    security_report_json,
                 ),
             )
+
+            # -----------------------------------------------------
+            # Individual test persistence
+            # -----------------------------------------------------
 
             for test in results:
                 if not isinstance(test, dict):
                     continue
 
-                attack_prompt = test.get("prompt") if "prompt" in test else test.get("attack_prompt")
+                attack_prompt = (
+                    test.get("prompt")
+                    if "prompt" in test
+                    else test.get("attack_prompt")
+                )
+
                 confidence = (
                     test.get("classification_confidence")
                     if "classification_confidence" in test
                     else test.get("confidence")
                 )
-                retrieved_context = test.get("retrieved_context")
-                visibility = test.get("visibility")
+
+                retrieved_context = test.get(
+                    "retrieved_context"
+                )
+
+                visibility = test.get(
+                    "visibility"
+                )
 
                 cursor.execute(
                     """
                     INSERT INTO test_results (
-                        campaign_id, test_id, category, attack_type, difficulty,
-                        severity, attack_prompt, target_response, result, reason,
-                        evaluation_method, confidence, source, parent_test_id,
-                        iteration, strategy, previous_result, previous_reason,
-                        retrieved_context_json, visibility_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                        campaign_id,
+                        test_id,
+                        category,
+                        attack_type,
+                        difficulty,
+                        severity,
+                        attack_prompt,
+                        target_response,
+                        result,
+                        reason,
+                        evaluation_method,
+                        confidence,
+                        source,
+                        parent_test_id,
+                        iteration,
+                        strategy,
+                        previous_result,
+                        previous_reason,
+                        retrieved_context_json,
+                        visibility_json
+                    )
+                    VALUES (
+                        ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?,
+                        ?, ?
+                    );
                     """,
                     (
                         campaign_id,
-                        test.get("test_id", "UNKNOWN"),
-                        test.get("category"),
-                        test.get("attack_type"),
-                        test.get("difficulty"),
-                        test.get("severity"),
+                        test.get(
+                            "test_id",
+                            "UNKNOWN",
+                        ),
+                        test.get(
+                            "category"
+                        ),
+                        test.get(
+                            "attack_type"
+                        ),
+                        test.get(
+                            "difficulty"
+                        ),
+                        test.get(
+                            "severity"
+                        ),
                         attack_prompt,
-                        test.get("target_response"),
-                        test.get("result"),
-                        test.get("reason"),
-                        test.get("evaluation_method"),
+                        test.get(
+                            "target_response"
+                        ),
+                        test.get(
+                            "result"
+                        ),
+                        test.get(
+                            "reason"
+                        ),
+                        test.get(
+                            "evaluation_method"
+                        ),
                         confidence,
-                        test.get("source"),
-                        test.get("parent_test_id"),
-                        test.get("iteration"),
-                        test.get("strategy"),
-                        test.get("previous_result"),
-                        test.get("previous_reason"),
-                        json.dumps(retrieved_context) if retrieved_context is not None else None,
-                        json.dumps(visibility) if visibility is not None else None,
+                        test.get(
+                            "source"
+                        ),
+                        test.get(
+                            "parent_test_id"
+                        ),
+                        test.get(
+                            "iteration"
+                        ),
+                        test.get(
+                            "strategy"
+                        ),
+                        test.get(
+                            "previous_result"
+                        ),
+                        test.get(
+                            "previous_reason"
+                        ),
+                        (
+                            json.dumps(
+                                retrieved_context
+                            )
+                            if retrieved_context
+                            is not None
+                            else None
+                        ),
+                        (
+                            json.dumps(
+                                visibility
+                            )
+                            if visibility
+                            is not None
+                            else None
+                        ),
                     ),
                 )
 
         return campaign_id
 
-    def get_run(self, campaign_id: str) -> Optional[Dict[str, Any]]:
-        if not campaign_id or not isinstance(campaign_id, str):
+    def get_run(
+        self,
+        campaign_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Load a campaign and its individual test results."""
+
+        if (
+            not campaign_id
+            or not isinstance(campaign_id, str)
+        ):
             return None
 
         with self._connection() as conn:
             cursor = conn.cursor()
+
             cursor.execute(
-                "SELECT * FROM campaign_runs WHERE campaign_id = ?;",
+                """
+                SELECT *
+                FROM campaign_runs
+                WHERE campaign_id = ?;
+                """,
                 (campaign_id,),
             )
+
             campaign_row = cursor.fetchone()
+
             if campaign_row is None:
                 return None
 
-            campaign_dict = dict(campaign_row)
-            summary_raw = campaign_dict.get("summary_json")
+            campaign_dict = dict(
+                campaign_row
+            )
+
+            # -----------------------------------------------------
+            # Decode campaign summary
+            # -----------------------------------------------------
+
+            summary_raw = campaign_dict.get(
+                "summary_json"
+            )
+
             if summary_raw:
                 try:
-                    campaign_dict["summary"] = json.loads(summary_raw)
-                except (json.JSONDecodeError, TypeError):
-                    campaign_dict["summary"] = {}
+                    campaign_dict["summary"] = (
+                        json.loads(
+                            summary_raw
+                        )
+                    )
+                except (
+                    json.JSONDecodeError,
+                    TypeError,
+                ):
+                    campaign_dict[
+                        "summary"
+                    ] = {}
             else:
-                campaign_dict["summary"] = {}
+                campaign_dict[
+                    "summary"
+                ] = {}
+
+            # -----------------------------------------------------
+            # Decode automatic security report
+            # -----------------------------------------------------
+
+            security_report_raw = (
+                campaign_dict.get(
+                    "security_report_json"
+                )
+            )
+
+            if security_report_raw:
+                try:
+                    campaign_dict[
+                        "security_report"
+                    ] = json.loads(
+                        security_report_raw
+                    )
+                except (
+                    json.JSONDecodeError,
+                    TypeError,
+                ):
+                    campaign_dict[
+                        "security_report"
+                    ] = {}
+            else:
+                campaign_dict[
+                    "security_report"
+                ] = {}
+
+            # -----------------------------------------------------
+            # Load individual tests
+            # -----------------------------------------------------
 
             cursor.execute(
-                "SELECT * FROM test_results WHERE campaign_id = ? ORDER BY id ASC;",
+                """
+                SELECT *
+                FROM test_results
+                WHERE campaign_id = ?
+                ORDER BY id ASC;
+                """,
                 (campaign_id,),
             )
-            results = [self._decode_test_row(row) for row in cursor.fetchall()]
-            campaign_dict["results"] = results
+
+            results = [
+                self._decode_test_row(row)
+                for row in cursor.fetchall()
+            ]
+
+            campaign_dict[
+                "results"
+            ] = results
+
             return campaign_dict
 
     @staticmethod
-    def _decode_test_row(row: sqlite3.Row) -> Dict[str, Any]:
+    def _decode_test_row(
+        row: sqlite3.Row,
+    ) -> Dict[str, Any]:
+        """Decode JSON fields stored with an individual test."""
+
         test_dict = dict(row)
-        retrieved_context_raw = test_dict.pop("retrieved_context_json", None)
+
+        retrieved_context_raw = (
+            test_dict.pop(
+                "retrieved_context_json",
+                None,
+            )
+        )
+
         if retrieved_context_raw:
             try:
-                test_dict["retrieved_context"] = json.loads(retrieved_context_raw)
-            except (json.JSONDecodeError, TypeError):
-                test_dict["retrieved_context"] = []
+                test_dict[
+                    "retrieved_context"
+                ] = json.loads(
+                    retrieved_context_raw
+                )
+            except (
+                json.JSONDecodeError,
+                TypeError,
+            ):
+                test_dict[
+                    "retrieved_context"
+                ] = []
         else:
-            test_dict["retrieved_context"] = []
+            test_dict[
+                "retrieved_context"
+            ] = []
 
-        visibility_raw = test_dict.pop("visibility_json", None)
+        visibility_raw = (
+            test_dict.pop(
+                "visibility_json",
+                None,
+            )
+        )
+
         if visibility_raw:
             try:
-                test_dict["visibility"] = json.loads(visibility_raw)
-            except (json.JSONDecodeError, TypeError):
-                test_dict["visibility"] = []
+                test_dict[
+                    "visibility"
+                ] = json.loads(
+                    visibility_raw
+                )
+            except (
+                json.JSONDecodeError,
+                TypeError,
+            ):
+                test_dict[
+                    "visibility"
+                ] = []
         else:
-            test_dict["visibility"] = []
+            test_dict[
+                "visibility"
+            ] = []
 
-        if "attack_prompt" in test_dict and "prompt" not in test_dict:
-            test_dict["prompt"] = test_dict["attack_prompt"]
-        if "confidence" in test_dict and "classification_confidence" not in test_dict:
-            test_dict["classification_confidence"] = test_dict["confidence"]
+        # Compatibility aliases used by campaign/dashboard code.
+        if (
+            "attack_prompt" in test_dict
+            and "prompt" not in test_dict
+        ):
+            test_dict[
+                "prompt"
+            ] = test_dict[
+                "attack_prompt"
+            ]
+
+        if (
+            "confidence" in test_dict
+            and "classification_confidence"
+            not in test_dict
+        ):
+            test_dict[
+                "classification_confidence"
+            ] = test_dict[
+                "confidence"
+            ]
+
         return test_dict
 
-    def get_failed_tests(self, campaign_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_failed_tests(
+        self,
+        campaign_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Return failed tests, optionally scoped to one campaign."""
+
         with self._connection() as conn:
             cursor = conn.cursor()
+
             if campaign_id is not None:
                 cursor.execute(
                     """
-                    SELECT * FROM test_results
-                    WHERE result = 'FAIL' AND campaign_id = ?
+                    SELECT *
+                    FROM test_results
+                    WHERE result = 'FAIL'
+                    AND campaign_id = ?
                     ORDER BY id ASC;
                     """,
                     (campaign_id,),
@@ -281,29 +698,68 @@ class ResultStore:
             else:
                 cursor.execute(
                     """
-                    SELECT * FROM test_results
+                    SELECT *
+                    FROM test_results
                     WHERE result = 'FAIL'
                     ORDER BY id ASC;
                     """
                 )
 
-            return [self._decode_test_row(row) for row in cursor.fetchall()]
+            return [
+                self._decode_test_row(row)
+                for row in cursor.fetchall()
+            ]
 
-    def list_runs(self) -> List[Dict[str, Any]]:
-        """Return campaign history ordered newest-first for dashboard consumption."""
+    def list_runs(
+        self,
+    ) -> List[Dict[str, Any]]:
+        """Return campaign history ordered newest-first."""
+
         with self._connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM campaign_runs ORDER BY created_at DESC;")
+
+            cursor.execute(
+                """
+                SELECT *
+                FROM campaign_runs
+                ORDER BY created_at DESC;
+                """
+            )
+
             runs = []
+
             for row in cursor.fetchall():
-                campaign_dict = dict(row)
-                summary_raw = campaign_dict.get("summary_json")
+                campaign_dict = dict(
+                    row
+                )
+
+                summary_raw = (
+                    campaign_dict.get(
+                        "summary_json"
+                    )
+                )
+
                 if summary_raw:
                     try:
-                        campaign_dict["summary"] = json.loads(summary_raw)
-                    except (json.JSONDecodeError, TypeError):
-                        campaign_dict["summary"] = {}
+                        campaign_dict[
+                            "summary"
+                        ] = json.loads(
+                            summary_raw
+                        )
+                    except (
+                        json.JSONDecodeError,
+                        TypeError,
+                    ):
+                        campaign_dict[
+                            "summary"
+                        ] = {}
                 else:
-                    campaign_dict["summary"] = {}
-                runs.append(campaign_dict)
+                    campaign_dict[
+                        "summary"
+                    ] = {}
+
+                runs.append(
+                    campaign_dict
+                )
+
             return runs

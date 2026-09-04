@@ -100,17 +100,16 @@ class DynamicRedAgent:
         self,
         pool_path=None
     ):
-
         if pool_path is None:
-
             base_dir = os.path.dirname(
                 os.path.abspath(__file__)
             )
-
+            # --- DEĞİŞİKLİK BURADA ---
             pool_path = os.path.join(
                 base_dir,
-                "crawled_prompts.json"
+                "curated_tests.json" 
             )
+            # -------------------------
 
         self.pool_path = pool_path
         self.attack_pool = self._load_pool()

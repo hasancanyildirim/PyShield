@@ -32,12 +32,36 @@ def _store() -> ResultStore:
 
 
 def _run_campaign_panel(store: ResultStore) -> None:
+    """Render the productized security assessment configuration panel."""
     with st.sidebar:
-        st.header("Run Security Campaign")
+        st.header("Configure Security Assessment")
+
+        st.caption(
+            "Configure the assessment, run PyShield, and review the "
+            "resulting risk score, findings, and test evidence."
+        )
+
+        st.selectbox(
+            "Target system",
+            ["Built-in Development Target"],
+            index=0,
+            disabled=True,
+            help=(
+                "The current main branch still uses the built-in TargetAI. "
+                "External target selection will be enabled here when the "
+                "Generic Target Adapter is integrated."
+            ),
+        )
 
         campaign_name = st.text_input(
-            "Campaign name",
-            "PyShield Demo Campaign",
+            "Assessment name",
+            "PyShield Security Assessment",
+        )
+
+        categories = st.multiselect(
+            "Security categories",
+            DEFAULT_CATEGORIES,
+            default=DEFAULT_CATEGORIES,
         )
 
         difficulty = st.selectbox(
@@ -58,14 +82,35 @@ def _run_campaign_panel(store: ResultStore) -> None:
             step=1,
         )
 
-        categories = st.multiselect(
-            "Categories",
-            DEFAULT_CATEGORIES,
-            default=DEFAULT_CATEGORIES,
+        st.markdown("#### Adaptive Testing")
+
+        adaptive_enabled = st.toggle(
+            "Enable adaptive follow-up attacks",
+            value=True,
+            help=(
+                "When a test fails, PyShield can generate bounded follow-up "
+                "attacks guided by the evaluator's failure reason."
+            ),
+        )
+
+        max_adaptive_iterations = st.slider(
+            "Max adaptive iterations",
+            min_value=1,
+            max_value=3,
+            value=3,
+            step=1,
+            disabled=not adaptive_enabled,
+        )
+
+        planned_tests = len(categories) * int(tests_per_category)
+
+        st.caption(
+            f"Planned base tests: {planned_tests}. "
+            "Adaptive follow-up tests may increase the final test count."
         )
 
         run_clicked = st.button(
-            "Run Campaign",
+            "Run Security Assessment",
             type="primary",
             use_container_width=True,
         )
@@ -86,19 +131,45 @@ def _run_campaign_panel(store: ResultStore) -> None:
                 tests_per_category
             ),
             "categories": categories,
+            "adaptive_enabled": adaptive_enabled,
+            "max_adaptive_iterations": (
+                int(max_adaptive_iterations)
+                if adaptive_enabled
+                else 0
+            ),
         }
 
         try:
-            with st.spinner(
-                "Running PyShield security campaign..."
-            ):
+            with st.status(
+                "Running security assessment...",
+                expanded=True,
+            ) as status:
+                status.write(
+                    "Configuration validated. Starting the security campaign."
+                )
+                status.write(
+                    "Executing attacks, target responses, evaluation, and "
+                    "adaptive follow-up testing."
+                )
+
                 output = run_and_store_campaign(
                     config=config,
                     result_store=store,
                 )
 
+                status.write(
+                    "Security report generated, results persisted to SQLite, "
+                    "and read-back verification completed."
+                )
+
+                status.update(
+                    label="Security assessment completed",
+                    state="complete",
+                    expanded=False,
+                )
+
             st.success(
-                f"Campaign completed: "
+                f"Assessment completed: "
                 f"{output['campaign_id']}"
             )
 
@@ -110,7 +181,7 @@ def _run_campaign_panel(store: ResultStore) -> None:
 
         except Exception as error:
             st.error(
-                f"Campaign failed: {error}"
+                f"Security assessment failed: {error}"
             )
 
 
@@ -150,7 +221,7 @@ def _campaign_selector(
                 break
 
     selected_label = st.selectbox(
-        "Select Campaign Run",
+        "Assessment History",
         labels,
         index=default_index,
     )
@@ -164,10 +235,115 @@ def _campaign_selector(
     return store.get_run(campaign_id)
 
 
+
+def _render_assessment_summary(
+    campaign_data: dict,
+) -> None:
+    """Show the most important security assessment outcome at a glance."""
+    report = campaign_data.get(
+        "security_report",
+        {},
+    ) or {}
+
+    summary = report.get(
+        "summary",
+        {},
+    ) or {}
+
+    risk_level = report.get(
+        "risk_level",
+        "UNKNOWN",
+    )
+
+    safety_score = float(
+        report.get(
+            "safety_score",
+            campaign_data.get(
+                "safety_score",
+                0.0,
+            ),
+        )
+    )
+
+    critical_findings = summary.get(
+        "critical_findings",
+        0,
+    )
+
+    vulnerable_categories = report.get(
+        "most_vulnerable_categories",
+        [],
+    ) or []
+
+    if vulnerable_categories:
+        first_item = vulnerable_categories[0]
+
+        if isinstance(first_item, dict):
+            most_vulnerable = first_item.get(
+                "category",
+                "N/A",
+            )
+            failed_tests = first_item.get(
+                "failed_tests",
+                first_item.get(
+                    "fail_count",
+                    0,
+                ),
+            )
+            most_vulnerable_display = (
+                f"{most_vulnerable} ({failed_tests} FAIL)"
+            )
+        else:
+            most_vulnerable_display = str(
+                first_item
+            )
+    else:
+        most_vulnerable_display = "None identified"
+
+    st.subheader("Security Assessment Summary")
+
+    cols = st.columns(4)
+
+    cols[0].metric(
+        "Risk Level",
+        risk_level,
+    )
+
+    cols[1].metric(
+        "Safety Score",
+        f"{safety_score:.1f} / 100",
+    )
+
+    cols[2].metric(
+        "Critical Findings",
+        critical_findings,
+    )
+
+    cols[3].metric(
+        "Most Vulnerable Category",
+        most_vulnerable_display,
+    )
+
+    status = campaign_data.get(
+        "status",
+        "UNKNOWN",
+    )
+
+    if status == "COMPLETED_WITH_ERRORS":
+        st.warning(
+            "The assessment completed, but one or more tests returned "
+            "execution errors. Review ERROR results before treating the "
+            "security assessment as complete evidence."
+        )
+    elif status == "EMPTY":
+        st.warning(
+            "The assessment did not produce any test results."
+        )
+
 def _render_metrics(
     campaign_data: dict,
 ) -> None:
-    st.subheader("Campaign Overview")
+    st.subheader("Assessment Overview")
 
     top = st.columns(4)
 
@@ -951,7 +1127,7 @@ def _render_results(
 
 def main() -> None:
     st.set_page_config(
-        page_title="PyShield Dashboard",
+        page_title="PyShield Security Assessment",
         page_icon="🛡️",
         layout="wide",
     )
@@ -961,7 +1137,7 @@ def main() -> None:
     )
 
     st.caption(
-        "Autonomous AI Quality & Security Testing"
+        "Autonomous AI Quality & Security Testing — Configure • Run • Assess • Report"
     )
 
     store = _store()
@@ -976,6 +1152,12 @@ def main() -> None:
 
     if campaign_data is None:
         return
+
+    st.divider()
+
+    _render_assessment_summary(
+        campaign_data
+    )
 
     st.divider()
 

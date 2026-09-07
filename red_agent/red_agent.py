@@ -167,6 +167,7 @@ class DynamicRedAgent:
             "test_id",
             "category",
             "attack_type",
+            "difficulty",  # <-- BURAYI EKLEDİK
             "severity",
             "prompt",
             "expected_behavior",
@@ -335,34 +336,20 @@ class DynamicRedAgent:
         category,
         difficulty
     ):
-
-        allowed_severities = (
-            self.DIFFICULTY_SEVERITY[
-                difficulty
-            ]
-        )
-
         candidates = []
 
         for test in self.attack_pool:
-
             if not self._is_valid_record(test):
                 continue
 
-            if (
-                test.get("category")
-                != category
-            ):
+            if test.get("category") != category:
                 continue
 
-            severity = str(
-                test.get(
-                    "severity",
-                    ""
-                )
+            test_diff = str(
+                test.get("difficulty", "")
             ).upper()
 
-            if severity not in allowed_severities:
+            if test_diff != difficulty.upper():
                 continue
 
             candidates.append(test)

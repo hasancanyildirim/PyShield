@@ -1,7 +1,7 @@
 from collections import defaultdict
 
 from red_agent.red_agent import DynamicRedAgent
-from target_ai.target_bot import TargetAI
+from target_ai.adapter import NovaBotAdapter
 from evaluator.evaluator import evaluate_target_response
 
 
@@ -170,13 +170,33 @@ def run_single_test(
 
     try:
 
-        target_data = target_ai.generate_response(
-            test_record.get(
-                "prompt",
-                ""
-            ),
-            test_mode=True
-        )
+        if hasattr(target_ai, "send_prompt"):
+            target_data = target_ai.send_prompt(
+                test_record.get(
+                    "prompt",
+                    ""
+                )
+            )
+        elif hasattr(target_ai, "generate_response"):
+            target_data = target_ai.generate_response(
+                test_record.get(
+                    "prompt",
+                    ""
+                ),
+                test_mode=True
+            )
+        elif callable(target_ai):
+            target_data = target_ai(
+                test_record.get(
+                    "prompt",
+                    ""
+                ),
+                test_mode=True
+            )
+        else:
+            raise TypeError(
+                f"Target AI object of type {type(target_ai)} does not support prompt execution."
+            )
 
     except Exception as error:
 
@@ -372,7 +392,7 @@ def run_tests():
     )
 
     red_agent = DynamicRedAgent()
-    target_ai = TargetAI()
+    target_ai = NovaBotAdapter()
 
     final_results = []
 

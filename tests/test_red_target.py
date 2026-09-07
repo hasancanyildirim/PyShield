@@ -1,4 +1,4 @@
-from red_agent.red_agent import baseline_tests
+from tests.test_registry import BASELINE_TESTS as baseline_tests
 from target_ai.target_bot import TargetAI
 
 

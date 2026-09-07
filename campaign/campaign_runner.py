@@ -1,3 +1,4 @@
+```
 """
 Campaign Engine Module for AI-QA Shield.
 
@@ -14,7 +15,7 @@ import uuid
 
 from main import run_single_test
 from red_agent.red_agent import DynamicRedAgent
-from target_ai.target_bot import TargetAI
+from target_ai.adapter import NovaBotAdapter, TargetAdapter
 
 
 DEFAULT_ATTACK_TYPES = {
@@ -264,21 +265,23 @@ def run_campaign(
     """
     Executes an automated security test campaign.
 
-    The campaign orchestrates the DynamicRedAgent, TargetAI and
-    Evaluator pipeline across the configured categories.
+    The campaign orchestrates the DynamicRedAgent, TargetAI / TargetAdapter,
+    and Evaluator pipeline across the configured test categories.
 
-    It also produces standardized reliability and reporting metrics
-    suitable for future persistence and dashboard components.
+    It prevents duplicate attack payloads and produces standardized
+    reliability, category, and reporting metrics suitable for
+    persistence and dashboard components.
 
     Args:
         config (dict):
-            Campaign configuration.
+            Campaign configuration containing campaign name, difficulty,
+            tests per category, and selected categories.
 
         red_agent (DynamicRedAgent, optional):
             Reusable Red Agent instance.
 
-        target_ai (TargetAI, optional):
-            Reusable Target AI instance.
+        target_ai (TargetAdapter | TargetAI, optional):
+            Reusable Target AI or Generic Target Adapter instance.
 
     Returns:
         dict:
@@ -304,7 +307,7 @@ def run_campaign(
         red_agent = DynamicRedAgent()
 
     if target_ai is None:
-        target_ai = TargetAI()
+        target_ai = NovaBotAdapter()
 
     campaign_id = (
         f"cmp_"
@@ -717,3 +720,4 @@ def run_campaign(
         "reporting":
             reporting_contract,
     }
+```

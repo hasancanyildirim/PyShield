@@ -11,7 +11,7 @@ import uuid
 
 from main import run_single_test
 from red_agent.red_agent import DynamicRedAgent
-from target_ai.target_bot import TargetAI
+from target_ai.adapter import NovaBotAdapter, TargetAdapter
 
 
 DEFAULT_ATTACK_TYPES = {
@@ -87,7 +87,7 @@ def run_campaign(
     """
     Executes an automated security test campaign based on the provided configuration.
 
-    Orchestrates the DynamicRedAgent, TargetAI, and Evaluator pipeline across
+    Orchestrates the DynamicRedAgent, TargetAI / TargetAdapter, and Evaluator pipeline across
     configured test categories, preventing duplicate attack payloads and computing
     itemized and aggregate category metrics.
 
@@ -98,7 +98,7 @@ def run_campaign(
             - tests_per_category (int): Number of tests to execute per category (>= 1)
             - categories (list): List of category names (e.g. ["Prompt Injection", ...])
         red_agent (DynamicRedAgent, optional): Reusable Red Agent instance.
-        target_ai (TargetAI, optional): Reusable Target AI instance.
+        target_ai (TargetAdapter | TargetAI, optional): Reusable Target AI / Adapter instance.
 
     Returns:
         dict: Structured campaign execution output containing:
@@ -127,7 +127,7 @@ def run_campaign(
         red_agent = DynamicRedAgent()
 
     if target_ai is None:
-        target_ai = TargetAI()
+        target_ai = NovaBotAdapter()
 
     campaign_id = (
         f"cmp_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"

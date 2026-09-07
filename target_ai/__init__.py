@@ -1,4 +1,5 @@
 from .target_bot import TargetAI, ask_target_bot, get_response
+from .adapter import TargetResponse, TargetAdapter, NovaBotAdapter, RESTTargetAdapter
 from .prompts import SYSTEM_PROMPT
 from .vector_store import (
     init_vector_store,
@@ -12,6 +13,10 @@ __all__ = [
     "ask_target_bot",
     "get_response",
     "TargetAI",
+    "TargetResponse",
+    "TargetAdapter",
+    "NovaBotAdapter",
+    "RESTTargetAdapter",
     "SYSTEM_PROMPT",
     "init_vector_store",
     "index_all_documents",

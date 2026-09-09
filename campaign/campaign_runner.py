@@ -1,4 +1,4 @@
-```
+
 """
 Campaign Engine Module for AI-QA Shield.
 
@@ -720,4 +720,3 @@ def run_campaign(
         "reporting":
             reporting_contract,
     }
-```

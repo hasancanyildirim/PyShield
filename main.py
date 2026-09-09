@@ -2,6 +2,9 @@ from collections import defaultdict
 
 from red_agent.red_agent import DynamicRedAgent
 from target_ai.adapter import NovaBotAdapter
+
+# Backward-compatible alias for legacy tests and callers.
+TargetAI = NovaBotAdapter
 from evaluator.evaluator import evaluate_target_response
 
 

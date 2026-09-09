@@ -317,7 +317,7 @@ def run_and_store_campaign(
     if red_agent is None:
         red_agent = campaign_runner.DynamicRedAgent()
     if target_ai is None:
-        target_ai = campaign_runner.TargetAI()
+        target_ai = campaign_runner.NovaBotAdapter()
 
     campaign_output = campaign_runner.run_campaign(
         config=config,

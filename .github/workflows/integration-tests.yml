@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - hasan-report-export-final-ux
       - hasan-campaign-integration
       - hasan-feedback-guided-adaptive
       - hasan-risk-reporting
@@ -30,4 +31,4 @@ jobs:
 
       - name: Run integration and regression tests
         run: |
-          pytest -q test_campaign.py test_campaign_integration.py test_result_store.py test_adaptive_e2e.py test_feedback_guided_adaptive.py test_security_report.py
+          pytest -q test_campaign.py test_campaign_integration.py test_result_store.py test_adaptive_e2e.py test_feedback_guided_adaptive.py test_security_report.py tests/test_adapters.py test_assessment_report.py
